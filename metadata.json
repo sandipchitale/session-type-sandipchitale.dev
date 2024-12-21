@@ -1,0 +1,8 @@
+{
+  "name": "Show X11 or Wayland",
+  "description": "Show if the session is x11 or wayland",
+  "uuid": "session-type@sandipchitale.dev",
+  "shell-version": [
+    "47"
+  ]
+}
