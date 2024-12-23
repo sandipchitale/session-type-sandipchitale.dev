@@ -16,34 +16,104 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-const {GLib, GObject, St} = imports.gi;
+const {Gio, GLib, GObject, St} = imports.gi;
+const ByteArray = imports.byteArray;
 
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+let that;
+
 const Indicator = GObject.registerClass(
 class Indicator extends PanelMenu.Button {
+    constructor(that) {
+        super();
+    }
+    
     _init() {
-        super._init(0.0, _('XDG_SESSION_TYPE'));
+        super._init(0.0, _('KUBERNETES_CONTEXT'));
 
-        const icon = new St.Icon({
-            icon_name: ('x11' === GLib.getenv('XDG_SESSION_TYPE')? 'process-stop' : 'emblem-generic'),
-            style_class: 'system-status-icon',
-        })
 
-        this.add_child(icon);
+        let contextAndNamespace = new St.BoxLayout({ vertical: false }); // Horizontal layout
+        
+        let kube = Gio.icon_new_for_string(`${that.path}/kube.svg`);
+        let icon = new St.Icon({
+            gicon: kube,
+            style_class: "system-status-icon",
+          });
 
-        this.connect('button-press-event', () => {
-            Main.notify('x11' === GLib.getenv('XDG_SESSION_TYPE')? 'X11' : 'Wayland');
+          
+        this.currentContextNamespaceLabel = new St.Label({
+          text: 'UNKNOWN / UNKNOWN',
+          style_class: "system-status-icon",
         });
+
+        contextAndNamespace.add_child(icon);
+        contextAndNamespace.add_child(this.currentContextNamespaceLabel);
+
+        this.add_child(contextAndNamespace);
+        
+        this.connect('button-press-event', () => {
+            Main.notify(`Updating current context / namespace...`);
+            this.refreshCurrentContext();
+        });
+
+        this.poll();
+    }
+
+    destroy() {
+        GLib.Source.remove(this.ticker);
+    }
+
+    poll() {
+        const interval = 10000;
+        this.ticker = GLib.timeout_add(GLib.PRIORITY_DEFAULT, interval, () => {
+          this.refreshCurrentContext();
+          return true;
+        });
+    }
+
+    refreshCurrentContext() {
+        let context = "UNKNOWN";
+        let namespace = "UNKNOWN";
+        try {
+            // Get the current context
+            const [ok, standard_output, standard_error, exit_status] =
+                GLib.spawn_command_line_sync("kubectl config current-context");
+            if (ok) {
+                context = ByteArray.toString(standard_output).trim();
+            } else {
+                let err = ByteArray.toString(standard_error).trim();
+                throw new Error(err);
+            }
+            try {
+                // Get the current namespace
+                const [ok, standard_output, standard_error, exit_status] =
+                    GLib.spawn_command_line_sync("kubectl config view --minify -o jsonpath='{..namespace}'");
+                if (ok) {
+                    namespace = ByteArray.toString(standard_output).trim();
+                } else {
+                    let err = ByteArray.toString(standard_error).trim();
+                    throw new Error(err);
+                }
+            } catch (e) {
+                namespace = "ERROR";
+            }
+        } catch (e) {
+            context = "ERROR";
+        } finally {
+            this.currentContextNamespaceLabel.set_text(`${context} / ${namespace}`);
+            this.currentContextNamespaceLabel.queue_redraw();
+        }
     }
 });
 
 export default class IndicatorExampleExtension extends Extension {
     enable() {
-        this._indicator = new Indicator();
+        that = this;
+        this._indicator = new Indicator(this);
         Main.panel.addToStatusArea(this.uuid, this._indicator);
     }
 
