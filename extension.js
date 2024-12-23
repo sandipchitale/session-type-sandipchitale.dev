@@ -16,7 +16,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-const {Clutter, GLib, GObject, St} = imports.gi;
+const {GLib, GObject, St} = imports.gi;
 
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
